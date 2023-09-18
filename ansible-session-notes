@@ -1,0 +1,665 @@
+sudo su-
+cd home 
+cd roshan1
+ec2
+sudo su - 
+yum install ansible
+sudo amazon-linux-extras install ansible2
+ansible --version
+--/etc/ansible/ansible.cfg files will be stored 
+hostname ansible-mgmt-node
+useradd ansadmin
+passwd ansadmin
+visudo
+In allow root to run any commands anywhere
+--add ansadmin all all nopassword all
+cd /etc/ssh
+nano sshd_config passwordauth no to yes
+reload sshd.service
+ssh-keygen
+ssh-copy-id ansadmin@your target ip 
+--you pub key will compy and sent it to target
+ssh  ansadmin@172.31.17.38
+
+-----------------------------------------
+M Terraform and Ansible Revision Session 2
+
+*************************************************************************************
+BELOW ADHOC COMMANDS ARE ONLY FOR TEST ENVIORNMENT DO NOT USE IN THE PROD ENVIRNMENT 
+*************************************************************************************
+
+add hosts 
+cd etc/ansible
+nano hosts add ip at the last
+--ansadmin sudo nano hosts 
+ansible -m ping 172.31.17.38
+sudo nano hosts
+--[test-server] above ip
+ansible -m ping test-server
+
+ansible all -m ping -- > Check connectivity between master and worker nodes
+ansible test-server -m setup -- > collect ansible facts of worker nodes
+ansible test-server -m file -a "dest=/home/ansadmin/test-file state=directory"  -- > Create new directory on worker machine
+ansible test-server -m file -a "dest=/home/ansadmin/test-file state=absent" -- > Delete the directory from worker machine
+ansible test-server -m shell -a "uptime"
+ansible test-server -m shell -a "df -h "
+ansible test-server -m shell -a "mkdir test-server"
+ansible test-server -m shell -a "rmdir test-server"
+ansible test-server -m copy -a "src=/etc/ansible/sample.txt dest=/home/ansadmin" --> copy file from source to destination(remote server)
+ansible test-server -m yum -a "name=httpd state=present" -b -- > Install a software (httpd) on remote machine
+ansible test-server -m service -a "name=httpd state=started" -b -- > start the service on worker node
+ansible test-server -m user -a "name=vikas" -b --> Create a new user
+ansible test-server -m user -a "name=vikas state=absent" -b --> delete the user
+ansible test-server -a "/sbin/reboot" -b  --> reboot command
+ 
+
+service httpd status 
+
+IMPORTANT
+after -b many times it will ask for hosts file so use -i /tmp/etc/sample/hosts
+
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
+M Terraform and Ansible Revision Session 4-5
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+**************
+Drowback of ansible is the initial setup must be done then only we can config the server
+**************
+sudo su -
+hostname
+su ansadmin
+cd /etc/ansible
+--to check my servers ansible -m ping all
+*****************************************************
+created variable playbook file 
+
+file name variable.yml
+---
+ - name: variable-playbook
+   hosts: test-server
+   vars:
+     name: vikas
+     number: 45
+   tasks:
+     - name: using debug module
+       debug:
+         msg: "The value of number is: {{number}}" <-- this is called sting interpolation (jinja templte)
+     - name: using debug module for name
+       debug:
+         msg: "Hello {{name}} !!!"
+*****************************************************************
+ansible-playbook variable.yml --syntax-check
+ansible-playbook variable.yml
+
+-*-*-*-register variables are system define variables-*-*---
+ 
+sudo nano register.yml
+file link : https://github.com/vikas99341/Ansible/blob/main/playbook/register.yml
+ansible-playbook register.yml --syntax-check
+ansible-playbook register.yml
+
+-------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------
+M Terraform and Ansible Revision Session 5-7
+------------------------------------------------------------------------------------------------------------------
+
+cd etc/ansible
+
+sudo nano install.httpd.yaml
+link: https://github.com/vikas99341/Ansible/blob/main/playbook/install-httpd
+ansible-playbook install.httpd.yaml {it will not work need root privilages so we use "-b"}
+ansible-playbook install.httpd.yaml -b
+We have installed httpd
+
+sudo nano loop.yml
+link: https://github.com/vikas99341/Ansible/blob/main/playbook/loop.yml
+ansible-playbook loop.yml
+to avoid repeatative task we use loop in the same file we changes state first absent then present
+
+sudo nano copy.yml
+link : https://github.com/vikas99341/Ansible/blob/main/playbook/copy.yaml
+in this file we copy the file from mgmt node to test server howver when we delete the file from testserver mgmt node will not trace anything and this is the drawback of ansible 
+
+***
+Handler 
+Ansible provides feature named handlers, which is like a task but will only run when called by a notifier in another task. This feature is important because your requirements for running a task may depend on the state of a service, existence of a file or a follow up tasks when state changed
+
+***
+while copying file if something chnegeed notify will run and it will invoke handler 
+
+*-*-*Handler is a special type of execution which will  happen only when it notify *-*-*-*  
+
+ansible-playbook handler.yml -b
+
+sudo nano handler-example.yml
+link : https://github.com/vikas99341/Ansible/blob/main/playbook/lampstack.yml
+
+--------
+sudo nano index.php
+--------
+<!DOCTYPE html>
+<html>
+<body>
+
+<h1>My first PHP page</h1>
+
+<?php
+echo "Hello World!";
+?>
+
+</body>
+</html>
+--------
+
+ansible-playbook handler-example.yml
+ansible-playbook handler-example.yml -b admin privilages
+now we have set task if anything chneged in index.php it will notify and invoke the handler 
+
+use -VVV for logs or it will give u an deatils what was happing in background
+
+
+------------------------------------------------------------------------------------------------------------------
+M Terraform and Ansible Revision Session 6-7
+------------------------------------------------------------------------------------------------------------------
+will execute users/group file
+link: https://github.com/vikas99341/Ansible/blob/main/playbook/users.yaml
+to check user fot created we will log to target server 
+cat /etc/passwd
+id username
+su username to switch user
+
+in password: "{{ default_user_password | password_hash('sha512' , 'A512') }}"
+shell: /bin/bash
+group: admin
+loop:
+ - sam
+ - rock
+IMPORTATNT WE NEED to learn vars.files so in vars we can put multiple user on sample.txt file and use vars Learn Vault
+--------------------------------------------------------------------------------------------------------------------
+********************************************************************************************************************
+M Terraform and Ansible Revision Session 7-8
+********************************************************************************************************************
+
+in this task we will try to executive multiple dynamic server using asible inventoy 
+
+su ansadmin
+ansible --version to check verion 
+python --version 
+ansible-galaxy collection list      /////to check if ansible-core installed 
+ansible-galaxy collection install amazon.aws
+
+The below requirements are needed on the local controller node that executes this inventory.
+
+python >= 3.6
+
+boto3 >= 1.22.0
+
+botocore >= 1.25.0
+
+before this we need to install pip to do so 
+sudo wget https://bootstrap.pypa.io/pip/2.7/get-pip.py
+python ./get-pip.py
+pip install boto3 is not working 
+python -m pip install boto3 we use howver we found boto3 older versions are reflecting so 
+pip3 install boto3
+above requirements are satisfied now
+***
+The inventory file is a YAML configuration file and must end with aws_ec2.{yml|yaml}. Example: my_inventory.aws_ec2.yml
+***
+will create on file 
+sudo nano my_inventory.aws_ec2.yml
+in file 
+
+plugin: amazon.aws.aws_ec2
+regions:
+  - us-east-1
+
+before this give admin permissin to ansible mgmt node crete role and allocate to ansible mgmt node
+now create IAM role ansible mgmt node admin-access go to instacne actions/security/modifyiamrole/allocate new role
+ansible-inventory -i my_inventory.aws_ec2.yml --list
+error
+sudo nano my_inventory.aws_ec2.yml
+plugin: aws_ec2
+regions:
+  - us-east-1
+ansible-inventory -i my_inventory.aws_ec2.yml --list
+ansible-inventory -i my_inventory.aws_ec2.yml --graph for graphical way
+if you only specific instance with tag use below filters
+
+
+******* IF FILE NOT WORK***
+host key checking = false remove #
+inventory section 
+enable_plugin = aws_ec2
+save
+****************************
+
+filters:
+  # All instances with their `Environment` tag set to `dev`
+  tag:Environment: dev
+  # All dev and QA hosts
+  tag:Environment:
+    - dev
+    - qa
+for all running instance 
+
+filters:
+  # All instances with their state as `running`
+  instance-state-name: running
+***********************************************************************************************************************
+
+
+-------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------
+M Terraform and Ansible Revision Session 8-9 DYNAMIC HOST
+------------------------------------------------------------------------------------------------------------------
+
+same steps like session 7 howver some chneges are still needed
+
+refer 7-8 same steps next as follow
+
+sudo nano my_inventory.aws_ec2.yml
+plugin: aws_ec2
+regions:
+  - us-east-1
+ansible-inventory -i my_inventory.aws_ec2.yml --list
+ansible-inventory -i my_inventory.aws_ec2.yml --graph for graphical way
+we will add filter 
+filters:
+tags:Environment: dev
+filters:
+  # All instances with their state as `running`
+  instance-state-name: running
+
+we will try to ping runnning servers
+ ansible -i my_inventory.aws_ec2.yml -m ping all (will not we need pem key )
+create same public pem key to ping 
+sudo nano new-key.pem 
+sudo chmod 755 new-key.pem (to allow user rwe access)
+ansible -i my_inventory.aws_ec2.yml -m ping all --private-key=new-key.pem
+will run playbook
+sudo nano copy.yaml
+---
+ - hosts: test-server
+   become: true
+   tasks:
+     - name: Copy sample.txt to test-server
+       copy: src=/etc/ansible/sample.txt
+             dest=/home/ansadmin
+             owner=root 
+             group=root 
+             mode=0666
+sudo nano sample.txt
+anisble-playbook -i my_inventory.aws_ec2.yml copy.yml --private-key=new-key.pem
+this is called dynamic host inventory
+---------------------------------------------------------------------------------
+------------------------
+M Terraform and Ansible Revision Session 9 15 min 
+------------------------------------------------------------------------------------------
+we have romved all the sever except ansible-mgmt-node and we are try to connect the and ping the same sever which is ansible-mgmt-node 
+issue has not been resolved hence we are refereing session 10
+
+
+-------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------
+M Terraform and Ansible Revision Session 10-13
+------------------------------------------------------------------------------------------
+new server ping the same server as local host (targert and mgmt server same)
+-
+sudo su -
+hostname ansible-mgmt-node
+sudo su -
+useradd ansadmin
+passwd ansadmin
+cd etc/ssh
+sudo nano sshd_config
+--PasswordAuthentication yes
+reload sshd.service
+sudo amazon-linux-extras install ansible2
+suansadmin
+cd /etc/ansible
+sudo nano hosts
+-we will add [test-server]
+---localhost
+ssh-keygen  ----created key 
+ssh-copy-id ansadmin@localhost ------copied key to our user ansadmin to allow ssh
+ansible -m ping test-server  ----now we are able to connect to same severver
+
+*******************
+now below we will work on ansible ===ROLES===
+
+https://github.com/vikas99341/Ansible/tree/main/roles
+
+if you have 100 line on yml code is time consuming to find error with the help of roles also code maintainblity is easy
+
+////this kind of sturcture will help you to split yaml in to small pices that will help you in case u need changes/////
+
+cd roles
+sudo yum install tree -y -----this cmd will folder structure in good tree way 
+
+sudo ansible-galaxy init install ---this will craete tree file and the file name is now {{ install }}
+sudo ansible-galaxy init copy
+
+install
+├── defaults
+│   └── main.yml
+├── files
+├── handlers
+│   └── main.yml
+├── meta
+│   └── main.yml
+├── README.md
+├── tasks
+│   └── main.yml -- pasted my tasks
+├── templates
+├── tests
+│   ├── inventory
+│   └── test.yml
+└── vars
+    └── main.yml
+
+now we have lampstack.yml file 
+we put tasks 
+
+- name: Installing Apache, MYSQL DB Community edition & PHP
+  yum: 
+    name: 
+      - httpd
+      - php 
+      - php-mysql
+    state: installed
+cd install/tasks
+sudo nano main.yml
+cd ../.. two steps back
+
+cd copy/tasks
+sudo nano main.yml
+cd copy/handler
+sudo nano main.yml
+cd .. /..
+tree
+cd ..
+pwd 
+etc/ansible
+sudo nano role-lampstack.yml
+---
+- hosts: test-server
+  remote_user: ansadmin
+
+  roles:
+    - install
+    - copy
+
+this roles will direct the roles folder in that install , copy folder and the cmd in there so go n execute from there
+
+ansible-playbook role-lampstack.yml
+ansible-playbook role-lampstack.yml -b
+sudo nano index.php
+ansible-playbook role-lampstack.yml -b
+SUCCESSFUL
+
+bootstap means when u start machine not only machine start along with certain script also run in backgroud that know as bootstrap
+
+*******************
+Windows server
+*******************
+first lunch windows server base windows 2022 
+add port 
+RDP -  3389
+winRM-HTTP - 5985
+winRM-HTTPS - 5986
+go to ec2 instance connect then RDP client
+download remote desktop file
+upload pem key
+drcrpt passwd
+windows server will open  need 30gb minimum
+open powershell on windows
+
+run below commands
+
+we run
+winrm enumerate winrm/config/Listener and found that port 5986 si not opened hence we run below cmds
+
+# Enable PowerShell remoting
+Enable-PSRemoting -Force
+
+# Set WinRM service startup type to automatic
+Set-Service WinRM -StartupType 'Automatic'
+
+# Configure WinRM Service
+Set-Item -Path WSMan:\localhost\Service\Auth\Certificate -Value $true
+Set-Item -Path 'WSMan:\localhost\Service\AllowUnencrypted' -Value $true
+Set-Item -Path 'WSMan:\localhost\Service\Auth\Basic' -Value $true
+Set-Item -Path 'WSMan:\localhost\Service\Auth\CredSSP' -Value $true
+
+# Create a self-signed certificate and set up an HTTPS listener
+$cert = New-SelfSignedCertificate -DnsName $(Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/public-hostname) -CertStoreLocation "cert:\LocalMachine\My"
+winrm create winrm/config/Listener?Address=*+Transport=HTTPS "@{Hostname=`"$(Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/public-hostname)`";CertificateThumbprint=`"$($cert.Thumbprint)`"}"
+
+# Create a firewall rule to allow WinRM HTTPS inbound
+New-NetFirewallRule -DisplayName "Allow WinRM HTTPS" -Direction Inbound -LocalPort 5986 -Protocol TCP -Action Allow
+
+# Configure TrustedHosts
+Set-Item WSMan:\localhost\Client\TrustedHosts -Value "*" -Force
+
+# Set LocalAccountTokenFilterPolicy
+New-ItemProperty -Name LocalAccountTokenFilterPolicy -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -PropertyType DWord -Value 1 -Force
+
+# Set Execution Policy to Unrestricted
+Set-ExecutionPolicy Unrestricted -Force
+
+# Restart the WinRM service
+Restart-Service WinRM
+
+# List the WinRM listeners
+winrm enumerate winrm/config/Listener
+
+go to 
+https://docs.ansible.com/ansible/latest/os_guide/windows_winrm.html
+
+go to ansible mgmt node and install below
+so first insatll pip
+
+exit and go to ec2 user 
+sudo yum install pip
+pip install "pywinrm>=0.3.0"
+create file 
+sudo nano win-inventory.ini file name can be any ((_this is an inventory file_))
+
+[win]
+3.110.169.193 --------copy windows public ip
+
+[win:vars]
+ansible_user=Administrator   ----username
+ansible_password="rD819c(fFD4(Km9r?2U7uPH$Z-=Ks9-Z" ---------copy windows passwd
+ansible_port=5986 ----port https
+ansible_connection=winrm
+ansible_winrm_scheme=https
+ansible_winrm_server_cert_validation=ignore
+ansible_winrm_kerberos_delegation=true
+
+IF WE RUNING THIS FOR MULTIPLE SERVER ALL attribute will remain same except username & passwd that we can provide dynamicaly
+now i have created windows img to avoid all this steps 
+
+run below command
+ansible -i /home/ec2-user/win-inventory.ini -m win_ping
+sudo nano win-playbook.yml
+---
+- name: Manage Windows
+  hosts: win
+  tasks:
+  - name: Create directory structure
+    win_file:
+      path: C:\Temp\folder
+      state: directory
+
+  - name: Touch a file      ----- we have craeted foo file 
+    win_file:
+      path: C:\Temp\folder\foo.txt
+      state: touch
+
+  - name: Create a file from a Jinja2 template      ---- we have created sample.txt file on ansible and copied to dest windows server
+    win_template:
+      src: sample.txt
+      dest: C:\temp\folder\sample.txt
+
+  - win_stat:
+      path: C:\temp\folder\foo.txt
+      get_checksum: yes
+      checksum_algorithm: md5
+    register: md5_checksum   ---value got stored in spcial kidn of variable called register which md5_checksum
+
+  - debug:
+      var: md5_checksum.stat.checksum
+
+-----
+nano sample.txt
+ansible-playbook -i win-inventory.ini win-playbook.yml
+
+go to - windows/cdrive /temp/folder -- u will find your files
+
+chucksum is way validate wiether 2 file are same
+windows and linux work is diffrent in linux we use -b it will now work on windows
+
+ansible role is nothing extraodinory ansible role is simplay braking code in small small pieces an that small small pices u can manage you content properly 2) traciblity the code mainatince will easy fo you now u know which code is failing 
+
+2) we try to connect to our windows server but we cannot use ssh to connect to windows for that we use software
+called pip install "pywinrm>=0.3.0" then we created invetory
+ 
+
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+M Terraform and Ansible Revision Session 11-14
+-------------------------------------------------------------------------------------------------------------
+ 
+Ansible Vault
+
+sudo su -
+hostname ansible-mgmt-node
+su ansadmin
+cd /etc/ansible
+sudo nano install.yml
+
+install.yml file content password info its not good practice to store file like this hence we need to secure file using vault
+
+ansible-playbook install.yml -b it will not work beacuse file doesnt have wrx access
+sudo chmod 755 install.yml
+
+To avoid exposure of my password i will encrypt install.yml
+
+To encrypt file : sudo ansible-vault encrypt install.yml
+ 
+provide password when prompted == > Encryption successful
+if we want view the file using cat install.yml not work even root cannot view the content
+
+To view the file : ansible-vault view install.yml 
+
+To edit the file : sudo ansible-vault edit install.yml
+
+now you will not be able to run file 
+ansible-playbook install.yml -b    ----give an error
+ 
+To run file with password:  ansible-playbook install.yml -b --ask-vault-pass
+
+To decrypt file : sudo ansible-vault decrypt install.yml --ask-vault-pass
+
+now we are going to create two file with variable to store pass if diffrent file
+
+**************************************************************************************
+example.yml
+---
+- name: Server Details
+  hosts: test-server
+  remote_user: ansadmin
+  vars_files:
+    - secrets.yml
+
+  tasks:
+  - name: Remove httpd
+    yum: pkg=httpd state=absent
+
+  - name: Install httpd
+    yum: pkg=httpd state=present
+******
+secrets.yml
+---
+  - password: password123
+
+******************************************
+sudo ansible-vault encrypt secrets.yml
+
+sudo chmod 755 secrets.yml
+
+ansible-playbook example.yml -b --ask-vault-pass
+
+
+***************************************************************************************
+
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+M Terraform and Ansible Revision Session 12-15
+-------------------------------------------------------------------------------------------------------------
+
+Ansible Tower is User interface and addistion feature RBAC Role-Based Access Controls (RBAC) are built into Tower and allow Tower administrators to delegate access to server inventorie.
+
+Ansible galaxy is addisional feature which add components like role and all
+
+Ansible basic is CLI which will hepl you to get your work done
+unzip tar-xvzf
+
+failed to run ansible tower continue on next session 
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+M Terraform and Ansible Revision Session 13-16
+-------------------------------------------------------------------------------------------------------------
+Ansible Tower 
+
+Ansible Tower has the following requirements:
+
+Supported Operating Systems:
+
+Red Hat Enterprise Linux 6 64-bit
+Red Hat Enterprise Linux 7 64-bit
+CentOS 6 64-bit
+CentOS 7 64-bit
+Ubuntu 12.04 LTS 64-bit
+Ubuntu 14.04 LTS 64-bit
+The latest stable release of Ansible
+
+2 GB RAM minimum (4+ GB RAM recommended)
+
+2 GB RAM (minimum and recommended for Vagrant trial installations)
+4 GB RAM is recommended per 100 forks
+20 GB hard disk
+
+64-bit support required (kernel and runtime)
+
+For Amazon EC2:
+
+Instance size of m3.medium or larger
+
+An instance size of m3.xlarge or larger if there are more than 100 hosts
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
