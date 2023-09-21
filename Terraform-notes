@@ -1,0 +1,132 @@
+Terraform installation
+
+--------------------------------------------------------------------------------------------------------------------
+********************************************************************************************************************
+
+Terraform link : https://developer.hashicorp.com/terraform/downloads?product_intent=terraform
+
+go to Linux -> Amazon Linux -> 
+
+sudo yum install -y yum-utils shadow-utils
+sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+sudo yum -y install terraform
+
+terraform --version 
+
+install AWS CLI 
+
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+aws --version
+
+go to aws consule > IAM > craete user > admin access> Security credentials > create Access Key & Secrect Access key id
+
+Now go back to Terminal 
+
+aws configure to configure aws user or account i have provided admin acess 
+
+AWS Access Key ID [None]: AKIA42KQFIALCZMLA45W
+AWS Secret Access Key [None]: 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
+Default region name [None]: us-east-1
+
+aws sts get-caller-identity  to view aws user details
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+
+*********************************************************************************************************************
+Terraform Session 16-19
+**********************************************************************************************************************
+lunch terrafrom EC2 instance 
+sudo su -
+hostname terraform
+sudo su -
+create main.tf file
+resource "aws_s3_bucket"                        "example" {
+  bucket = "my-tf-test-bucket"
+
+  tags = {
+    Name        =                                   "My bucket"
+    Environment = "Dev"
+  }
+}
+terraform validate even the file is not proprly aligned it will not give an syntex error it will only check the syntex  
+terraform fmt  cmd will align the format 
+terrafrom plan  will show the plan 
+
+terraform plan -out sample.txt it will save the plan in the sample.txt file next time when you apply you it wont show u plan directly excute and create stuff
+
+terraform apply 
+bucket name must be unique
+if u run terraform apply again it will it not create anything it will match the your real infrastucture with terraform current state and give an output
+
+terraform.tfstate file is most important aspect of terraform beacuse it contain all the infrature details
+this help us to trace back what changes happened privously and keep track of everything
+
+(+) added
+(-) destroyed
+(~) changed
+
+terraform apply --auto-approve to auto approve without yes or no permission
+
+this kind of environment is useful for stock market like we can run server whenever we require like 9am to 3pm etc.
+Terraform backend 
+if loacal file is crashed it will then all the file will crash 
+
+
+*******
+LOCAL
+
+The local backend stores state on the local filesystem, locks that state using system APIs, and performs operations locally.  
+
+*******
+REMOTE
+
+The remote backend is unique among all other Terraform backends because it can both store state snapshots and execute operations for Terraform Cloud's CLI-driven run workflow. It used to be called an "enhanced" backend.
+
+*******
+AWS S3
+
+Stores the state as a given key in a given bucket on Amazon S3. This backend also supports state locking and consistency checking via Dynamo DB, which can be enabled by setting the dynamodb_table field to an existing DynamoDB table name. A single DynamoDB table can be used to lock multiple remote state files. Terraform generates key names that include the values of the bucket and key variables.
+
+and S3 we have Bucket Versioning that will version our state file if u run code 5 time it will crete 5 files it will easy to trace
+****
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
