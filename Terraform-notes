@@ -76,6 +76,7 @@ this kind of environment is useful for stock market like we can run server whene
 Terraform backend 
 if loacal file is crashed it will then all the file will crash 
 
+*** WAYS TO STORE TFSTATE FILE ***
 
 *******
 LOCAL
