@@ -27,8 +27,8 @@ Now go back to Terminal
 
 aws configure to configure aws user or account i have provided admin acess 
 
-AWS Access Key ID [None]: AKIA42KQFIALCZMLA45W
-AWS Secret Access Key [None]: 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
+AWS Access Key ID [None]:--
+AWS Secret Access Key [None]: --
 Default region name [None]: us-east-1
 
 aws sts get-caller-identity  to view aws user details
