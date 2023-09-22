@@ -98,6 +98,62 @@ and S3 we have Bucket Versioning that will version our state file if u run code 
 
 
 
+*********************************************************************************************************************
+Terraform Session 17-20
+*********************************************************************************************************************
+
+Terraform file Lock
+
+first we have to create dynamoDB table
+
+DynamoDB Table to use for state locking and consistency. The table must have a partition key named LockID with type of String. If not configured, state locking will be disabled.
+
+go to > dynamo DB > create table > Partition key > LockID
+
+go to S3 > create bucket > ACL Enabled > Bucket Versioning ENabled 
+
+we dont use deafualt VPC they reason is behind that we dont have control over it it allow all traffic inbound as well outbound also deafult route tables 
+
+create VPC
+Terraform VPC we have created
+
+will create two tf files 
+provider .tf
+vpc.tf
+
+**************
+resource "aws_vpc" "main" {
+  cidr_block       = "10.0.0.0/24"
+  instance_tenancy = "default"
+
+  tags = {
+    Name = "main-terraform"
+  }
+}
+
+terraform {
+  backend "s3" {
+    bucket = "terraform-main-statefile-bucket"   S3bucket name
+    key    = "terraform.tfstate"                 key meaning folder name inside that tfstate wfile will store
+    region = "us-east-1"                         region
+    dynamodb_table = "terraform-main"            copy dynamodb table name paste here 
+  }
+}
+
+*************
+provider.tf 
+
+provider "aws" {
+  region = "us-east-1"
+}
+*********************
+
+terraform init
+terraform apply --auto-approve
+
+u will see that tfstate file will stored on s3 bucket 
+
+36.14
 
 
 
