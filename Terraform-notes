@@ -97,7 +97,6 @@ and S3 we have Bucket Versioning that will version our state file if u run code 
 ****
 
 
-
 *********************************************************************************************************************
 Terraform Session 17-20
 *********************************************************************************************************************
@@ -128,6 +127,7 @@ resource "aws_vpc" "main" {
 
   tags = {
     Name = "main-terraform"
+    Environment = "Dev"        chnaged section
   }
 }
 
@@ -138,6 +138,11 @@ terraform {
     region = "us-east-1"                         region
     dynamodb_table = "terraform-main"            copy dynamodb table name paste here 
   }
+}
+
+------changed section
+output "aws_vpc_output" {                   out put name 
+   value = "${aws_vpc.main.cidr_block}"     --output value 
 }
 
 *************
@@ -153,8 +158,241 @@ terraform apply --auto-approve
 
 u will see that tfstate file will stored on s3 bucket 
 
-36.14
 
+ls -la
+
+if u add changed section to vpc.tf file and save that file if go to s3 it will create version of that file
+go to s3 bucket > Show version 
+
+mv vpc.tf vc.tf              even if you change the file name it won't effect to you infrasture so name can be anything
+mv provider.tf pd.tf 
+
+
+************************************************************************************************************************
+
+
+------------------------------------------------------------------------------------------------------------------------
+Terraform Session 18-21 Dynamic Value sting interpolation
+------------------------------------------------------------------------------------------------------------------------
+
+in our provious session we have hard codded all the values in the file howver this is not the best practice if we need some chnages or if multiple teams are working on the same project so we learn how to use dynamic code
+
+if we want to print value of you key 
+
+var1=5
+each var1  ----only key is prinint not value to do so 
+
+******
+we use STING INTERPOLATION  ${--} 
+******
+each ${var1}
+5  this will show value major coding language use sting interpolation java python etc
+
+will excut this concept in our work
+----------------------
+variable.tf
+-----------
+variable "cidr_range" {
+   type = string
+   default = "10.0.0.0/24"      ----- we provided ip value here
+   description = "variable to store ip range"
+}
+----------------------------------------------------
+vap.tf 
+----------------------------------------------------
+resource "aws_vpc" "main" {
+  cidr_block       = "${var.cidr_range}"  ---- we have removed 10.0.00/24 and used string interpolation "${var.variablename}" 
+  instance_tenancy = "default"
+
+  tags = {
+    Name = "main-terraform"
+    Environment = "Dev"
+  }
+}
+
+terraform {
+  backend "s3" {
+    bucket = "terraform-main-statefile-bucket"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+    dynamodb_table = "terraform-main"
+  }
+}
+
+output "aws_vpc_output" {
+    value = "${aws_vpc.main.cidr_block}"
+}
+----------------------------------------------------
+
+now we dont provide default value in varaible file
+variable "cidr_range" {
+   type = string
+   description = "variable to store ip range"
+}
+
+--------------------------------------------
+terraform plan 
+it will ask you for which value means Ip whould you like to execute
+enter value : 10.0.0.0/24
+
+another way is this
+
+terraform plan -var "cidr_range=10.10.0.0/24"
+
+work however if we have many variable this is not good way so we craete tfvars file to store all the values
+create 
+dev.tfvars   file 
+cider_range = "10.10.0.0/24"    inside file
+
+terraform plan -var-file=dev.tfvars
+
+
+------------------------
+*** Terrform Workspace ***
+------------------------
+if we have team they will be diffrent enviorment people work like Dev, prod, or any team name etc and each environment have diffrent workspace to test, code , deploy
+
+to view terrform Workspace 
+
+terraform workspace list           ---list all the workspace 
+terraform workspace --help         ---show how to use workspace
+terraform workspace new dev          ---to create new workspace
+terraform workspace new prod         ---to create new workspace
+terraform workspace list   
+  default                       -- (*) represent current workspace
+  dev
+* prod
+
+there will be two object created inside S3 bucket we have craeted eariler
+ 
+Amazon S3 > Buckets > terraform-main-statefile-bucket > env:/ prod/ & dev/
+
+each workspace have its own terrafrom.tfstate file
+
+
+terraform workspace select dev    -----to select workspace
+
++++++++
+dev -  this will be on dev environment 
+terraform apply -var-file=dev.tfvars --auto-approve
+
+
+terraform workspace select prod
+++++++
+terraform apply --auto-approve
+
+enter value : 10.0.0.0/26
+
+----------------------------------------------------------------
+
+but this is hard to know that which workspace we are working 
+
+so will chnage the code itself will tell us which workspace we are in
+
+resource "aws_vpc" "main" {
+  cidr_block       = "${var.cidr_range}"
+  instance_tenancy = "default"
+
+  tags = {
+    Name = "main-terraform"
+    Environment = "${terraform.workspace}"   will change the value with sting interpolation
+  }
+}
+
+terraform {
+  backend "s3" {
+    bucket = "terraform-main-statefile-bucket"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+    dynamodb_table = "terraform-main"
+  }
+}
+
+output "aws_vpc_output" {
+    value = "${aws_vpc.main.cidr_block}"
+}
+
+terraform destroy --auto-approve
+
+10.0.0.0/26
+
+terraform workspace select dev
+
+terraform destroy --auto-approve
+
+10.10.0.0/24
+
+**************************************************************************************************************************************
+------------------------------------------------------------------------------------------------------------------------
+Terraform Session 19-22 Dynamic Value sting interpolation
+------------------------------------------------------------------------------------------------------------------------
+
+any workspace you that workspace will only create in the current code in vpc.tf with defined s3 bucket for state file
+
+we have try to use more dynamic values 
+
+we have added count 
+count = 5 in        ----- vpc.tf file and removed output "aws_vpc_output"
+five vpc will created with same name and same ip range 
+this is not effective way
+
+terraform plan
+
+**will us condistional execution**
+
+terraform workspace list
+select dev
+
+resource "aws_vpc" "main" {
+  count            = "${terraform.workspace == "dev" ? 0 : 1}"  ---if my workspace is dev then execute 0 rest crate 1 
+  cidr_block       = "${var.cidr_range}"
+  instance_tenancy = "default"
+
+terraform destroy --auto-approve 
+nothing will be creted 
+
+now will switch the workspace 
+
+terraform workspace select prod
+terraform apply --auto-approve 
+ it will validate and only keep 1 vpc if you have multiple as per the code
+
+now we want name also to be dynamic so will use new resourse block
+
+************///////
+
+Locals        resourse block
+
+***********///////
+
+locals {
+   vpc_name  = "${terraform.workspace == "dev" ? "demo-vpc-dev" : "demo-vpc-prod"}"  ---if my workspace is dev then name will be demo-vpc-dev or rest demo-vpc-prod
+
+resource "aws_vpc" "main" {
+  count            = "${terraform.workspace == "dev" ? 0 : 1}"
+  cidr_block       = "${var.cidr_range}"
+  instance_tenancy = "default"
+
+  tags = {
+    Name = "${local.vpc_name}"                                         ----we edit the name tag add loacl.vpc_name
+    Environment = "${terraform.workspace}"
+  }
+}
+
+because we have mensionted in the code if dev create o hence we are switching workspace
+
+terraform workspace select prod
+
+terraform apply --auto-approve 
+
+1 vpc created with name demo-vpc-prod in prod environment
+
+***********************************************************************************************************************************************
+
+
+------------------------------------------------------------------------------------------------------------------------
+Terraform Session 20-23 Dynamic Value 
+------------------------------------------------------------------------------------------------------------------------
 
 
 
