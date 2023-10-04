@@ -390,9 +390,826 @@ terraform apply --auto-approve
 ***********************************************************************************************************************************************
 
 
+-----------------------------------------------------------------------------------------------------------------------
+Terraform Session 20-23 EC2  
 ------------------------------------------------------------------------------------------------------------------------
-Terraform Session 20-23 Dynamic Value 
+
+so will create once ec2 instance with the help of terraform  and 2) will intigrate vpc with ec2 instance 
+
+sudo su -
+mkdir ec2-demo           IMP --now we are in diffrent file so s3 backend will not work tfstate file will store on local
+cd ec2-demo
+main.tf
+
+provider "aws" {
+    region = "us-east-1"
+  
+}
+
+resource "aws_instance" "ec2-new" {
+    ami                = "ami-00c6177f250e07ec1"
+    instance_type      =  "t2.micro"  
+  
+}
+
+terraform init
+terraform validate
+terraform plan
+
+currently we have not config any value or code to this ec2 in in deafualt VPC if we want this vpc in private VPC we need below config specialy security group
+
+AMI is REgion specific one AMI will not work diffrent region should be the same region
+
+now will use count to run 5 instance 
+
+count = 5
+
+terraform apply --auto-approve
+five instance will be created 
+
+nano main-tf
+
+***
+
+provider "aws" {
+    region = "us-east-1"
+  
+}
+
+
+resource "aws_vpc" "my_vpc" {                          ---subnet is referencing this 
+  cidr_block = "172.16.0.0/16"
+
+  tags = {
+    Name = "tf-example"
+  }
+}
+
+resource "aws_subnet" "my_subnet" {
+  vpc_id            = aws_vpc.my_vpc.id           ------ resource referencing  
+  cidr_block        = "172.16.10.0/24"
+  availability_zone = "us-east-1a"
+
+  tags = {
+    Name = "tf-subnet"
+  }
+}
+
+resource "aws_network_interface" "foo" {                            ---------blocking  ip  also ec2 instacne is referencing this 
+  subnet_id   = aws_subnet.my_subnet.id
+  private_ips = ["172.16.10.100"]
+
+  tags = {
+    Name = "primary_network_interface"
+  }
+}
+
+resource "aws_instance" "foo" {
+  ami           = "ami-00c6177f250e07ec1"
+  instance_type = "t2.micro"
+
+  network_interface {
+    network_interface_id = aws_network_interface.foo.id                ----resource referencing
+    device_index         = 0
+  }
+
+}
+
+-----------------------------------------------------------------
+
 ------------------------------------------------------------------------------------------------------------------------
+Terraform Session 21-23 creating complete VPC 
+------------------------------------------------------------------------------------------------------------------------
+
+web application should be on public subnet and data base and should be on private subnet
+
+
+provider "aws"{
+region = "us-east-1"
+}
+
+# 1. Create a vpc
+resource "aws_vpc" "terraform-demo" {
+  cidr_block = "10.0.0.0/16"
+  tags = {
+  Name = "my-terraform"
+}
+}
+
+# 2. Create Internet gateway
+resource "aws_internet_gateway" "gw" {
+ vpc_id = aws_vpc.terraform-demo.id
+ }
+
+ # 3. Create custome route table
+
+resource "aws_route_table" "edu-route-table" {
+vpc_id = aws_vpc.terraform-demo.id
+route {
+cidr_block = "0.0.0.0/0"
+# this means all traffic is allowed
+     gateway_id = aws_internet_gateway.gw.id
+   }
+   route {
+     ipv6_cidr_block = "::/0"
+     gateway_id      = aws_internet_gateway.gw.id
+}
+ tags = {
+     Name = "edureka"
+   }
+ }
+
+ # 4. Create subnet where our webserver is going to reside on_failure
+ resource "aws_subnet" "subnet-1" {
+   vpc_id            = aws_vpc.terraform-demo.id
+   cidr_block        = "10.0.1.0/24"
+   availability_zone = "us-east-1a"
+
+   tags = {
+     Name = "edu-subnet"
+   }
+ }
+# 5. Associate route table to subnet
+resource "aws_route_table_association" "a" {
+  subnet_id      = aws_subnet.subnet-1.id
+  route_table_id = aws_route_table.edu-route-table.id
+}
+# 6. Create a security group
+resource "aws_security_group" "allow_web" {
+   name        = "allow_web_traffic"
+   description = "Allow Web inbound traffic"
+     vpc_id      = aws_vpc.terraform-demo.id
+ingress {
+     description = "HTTPS"
+     from_port   = 443
+     to_port     = 443
+     protocol    = "tcp"
+     cidr_blocks = ["0.0.0.0/0"]
+}
+ingress {
+     description = "HTTP"
+     from_port   = 80
+     to_port     = 80
+     protocol    = "tcp"
+     cidr_blocks = ["0.0.0.0/0"]
+   }
+   ingress {
+     description = "SSH"
+     from_port   = 22
+     to_port     = 22
+     protocol    = "tcp"
+     cidr_blocks = ["0.0.0.0/0"]
+   }
+   egress {
+     from_port   = 0
+     to_port     = 0
+     protocol    = "-1"
+     cidr_blocks = ["0.0.0.0/0"]
+   }
+
+   tags = {
+     Name = "allow_web"
+   }
+ }
+
+ # 7. Create a network_interface
+
+ resource "aws_network_interface" "web-server-nic" {
+  subnet_id       = aws_subnet.subnet-1.id
+  private_ips     = ["10.0.1.50"]
+   security_groups = [aws_security_group.allow_web.id]
+}
+
+# 8. Create elastic_ip
+resource "aws_eip" "one" {
+   vpc                       = true
+   network_interface         = aws_network_interface.web-server-nic.id
+   associate_with_private_ip = "10.0.1.50"
+   depends_on                = [aws_internet_gateway.gw]
+ }
+
+# 9. Create aws_instance
+
+resource "aws_instance" "web-server-instance1" {
+   ami               = "ami-00c6177f250e07ec1"
+   instance_type     = "t2.micro"
+   availability_zone = "us-east-1a"
+   key_name          = "terraform-demo"
+depends_on                = [aws_eip.one]
+   network_interface {
+     device_index         = 0
+     network_interface_id = aws_network_interface.web-server-nic.id
+   }
+
+   user_data = <<-EOF
+                 #!/bin/bash
+                 sudo yum update -y
+                 sudo yum install httpd -y
+                 sudo systemctl start httpd
+                 sudo bash -c 'echo Learning Terraform on AWS !! > /var/www/html/index.html'
+                 EOF
+   tags = {
+     Name = "web-server"
+   }
+ }
+ 
+
+  195  mkdir ec2-vpc
+  196  cd ec2-
+  197  mv ec2-vpc complete-vpc
+  198  cd complete-vpc/
+  199  nano main.tf
+  200  nano main.tf
+  201  nano terraform-key.pem
+  202  terraform init
+  203  terraform plan
+  204  terraform apply --auto-approve
+  205  terraform state list            -------------will list all the thing which got created 
+  206  terraform destroy --auto-approve
+  207  history
+
+************************************************************************************************************************************************************************************
+
+------------------------------------------------------------------------------------------------------------------------
+Terraform Session 22-25 using IMPORT manual to terraform CLI integrate
+------------------------------------------------------------------------------------------------------------------------
+
+******* TERRAFORM IMPORT *******
+
+
+
+first we will create manual VPC 
+
+on the CLI will create one folder
+
+mkkdir manual-vpc
+---------------------------------
+terraform import --help
+
+This will find and import the specified resource into your Terraform state, 
+allowing existing infrastructure to come under Terraform
+management without having to be initially created by Terraform
+---------------------------------
+**************************
+
+NOW WILL integrat memanual to terraform CLI 
+
+basiclly we have to provide filler crateria in terrafrom to get correct data
+
+based on what ever inputs you know will get that from the consule and add that in
+the terraform CLI 
+-------------------------------
+
+main.tf
+----
+
+provider "aws" {
+    region = "us-east-1"
+  
+}
+
+resource "aws_vpc" "mrng-vpc" {         ---will take this name in terraform inport aws_vpc.mrng-vpc 
+    cidr_block = "10.0.0.0/24"          -- cidr range
+    instance_tenancy = "default"  
+
+    tags = {
+        Name = "morning-vpc"              ---tags from the exiting vpc on the aws consule
+        Environment = "Prod"     
+    }  
+}
+
+---------------
+
+***import resource block.name and current vpc which in aws consule***
+
+terraform import aws_vpc.mrng-vpc vpc-0b2d38c9a27db2014
+terraform init
+terraform import aws_vpc.mrng-vpc vpc-0b2d38c9a27db2014
+
+The resources that were imported are shown above. These resources are now in
+your Terraform state and will henceforth be managed by Terraform
+
+terraform show
+cat terraform.tfstate
+
+now will change the vpc name tags
+nano main.tf
+terraform apply --auto-approve
+only name will chnage rest will remain same 
+-------------------------------------------------------------
+
+same we have done with ec2 
+
+resource "aws_instance" "main" {
+    ami = "ami-0bb4c991fa89d4b9b"
+    instance_type = "t2.micro"
+    vpc_security_group_ids = ["sg-0a53dc8485924449d"]
+    key_name = "terraform-key"
+    tags = {
+        name = "terraform-instance"
+    }
+
+}
+
+
+
+-----------------------------
+BEST PRACTICE IS EITHER WORK MANUALLY OR TERRAFROM 
+-----------------------------
+
+
+******* TERRAFORM TAINT *******
+
+ Terraform uses the term "tainted" to describe a resource instance
+ which may not be fully functional, either because its creation
+ partially failed or because you've manually marked it as such using
+ this command.
+
+if you are not using S3 as backend your state file will be overwritten and if we
+want to last three runs what chnages done so u will not able to track it
+
+so we taint that resource marking that resource  
+sppose we create 10 ec2 and 9 creted one failed so we taint 10 th one like check it later
+
+
+-------------------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------------------
+Terraform Session 24-27  Delete specific instance   in 23 session traget and taint has complted 
+-------------------------------------------------------------------------------------------
+
+first we have created 2 ec2 instance 
+------
+
+provider "aws" {
+    region = "us-east-1"
+  
+}
+
+
+resource "aws_instance" "main" {
+    ami = "ami-0bb4c991fa89d4b9b"
+    instance_type = "t2.micro"
+    tags = {
+        name = "terraform-instance-1"
+    }
+  
+}
+
+resource "aws_instance" "main-2" {   --we want to delete this instacne so -target 
+    ami = "ami-0bb4c991fa89d4b9b"
+    instance_type = "t2.micro"
+    tags = {
+        name = "terraform-instance-2"
+    }
+
+}
+---------
+
+terraform init
+terraform apply --auto-approve
+terraform state show
+terraform state list
+aws_instance.main
+aws_instance.main-2     --we want to delete this instacne so -target followed by instacne name 
+
+
+****************************************************************
+terraform destroy -target aws_instance.main-2 --auto-approve   
+*****************************************************************
+
+
+******* TERRAFORM TAINT *******
+
+Terraform uses the term "tainted" to describe a resource instance
+which may not be fully functional, either because its creation
+partially failed or because you've manually marked it as such using
+this command.
+
+if you are not using S3 as backend your state file will be overwritten and if we
+want to last three runs what chnages done so u will not able to track it
+
+so we taint that resource marking that resource  
+sppose we create 10 ec2 and 9 creted one failed so we taint 10 th one like check it later
+
+
+
+We have created one Ec2 Instance 
+
+main.tf
+------------------
+provider "aws" {
+    region = "us-east-1"
+
+}
+
+resource "aws_instance" "main" {
+    ami = "ami-0bb4c991fa89d4b9b"
+    instance_type = "t2.micro"
+    tags = {
+        name = "test-main"
+    }
+
+}
+-----------------------
+
+ terraform apply --auto-approve
+
+now we taint the this ec2 instance so 
+
+terrafrom taint --help  give an info
+
+terraform state list
+aws_instance.main
+terraform taint aws_instance.main
+terraform state show aws_instance.main  --it will show that aws_instance.main has been tainted
+
+ 
+now in general senario if we chnage anything in main.tf file like name it will only chnage the
+name rest will be there as it was howver if u taint the resource and chnage the name or anthing in main.tf
+tarraform think something is wrong or correpted so it will destroy the instance first 
+and then it will create brand new resource 
+
+now we have chnged the instance name 
+
+terrafrom apply --auto-approve
+
+Destruction complete  destroy and then create
+Creation complete
+
+now again we chneged the name  
+
+terrafrom apply --auto-approve
+
+this time only name will chnaged rest it same so [[ only after taint ]] it will destroy nad create later it will act same
+
+-------------------------------------------------------------------------------------------------------------------------
+
+
+*****************************************************
+*** TERRAFORM CONSULE ***
+*****************************************************
+
+terrafrom have a function like
+loop, concat , split, replace etc for ref below link:
+https://developer.hashicorp.com/terraform/language/functions/replace
+
+-------it's kind of condistional execution-----
+
+local variable is special type of var whcih can we use very often use  
+
+
+mkdir functions
+cd functions/
+
+nano main.tf
+
+--------
+
+provider "aws" {
+    region = var.region
+
+}
+
+locals {
+  time = formatdate ("DD MMM YYYY hh:mm ZZZ", timestamp())
+}
+
+variable "region" {                           ---this is how we use variable with hep of variable file
+    default = "us-east-1"
+}
+
+variable "tags" {                             ---this is how we use variable with hep of variable file
+    type = list
+    default = ["firstec2","secondec2"]
+}
+
+variable "ami" {                 ---this is how we use variable with hep of variable file
+    type = map
+    default = {
+      "us-east-1" = "ami-id"
+      "ap-south-1" = "ami-id"
+      "us-west-1" = "ami-id"
+    }
+
+}
+
+
+resource "aws_instance" "app-dev" {
+    ami = lookup(var.ami,var.region)
+    instance_type = "t2.micro"
+    count = 2
+
+    tags = {
+      name = element(var.tags,count.index)
+    }
+
+}
+--------
+
+nano terraform-key.pem
+ls
+main.tf  terraform-key.pem
+terraform init
+terraform plan
+-----------------------------------------------------------------------------------
+now as per our code terrafrom picked var which is us-east-1 and created ec2 instance 
+however if we want to execute in diffrent region we use below cmd
+-------------------------------------------------------------------------------------
+
+terraform plan -var "region=us-west-1"
+
+
+*** IMP key ***
+echo $PATH
+/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/root/bin
+ ssh-keygen
+enter-enter-enter
+
+
+------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------
+Terraform Session 25-28  multiple provider /  Terraform remote state
+-------------------------------------------------------------------------------------------
+
+Multiple provider in same provider block
+
+provider.tf
+
+provider "aws" {
+    region = "us-west-1"
+
+}
+
+
+provider "aws" {
+    alias = "roshan1"       ---if u want use both use alias name can be anything 
+    region = "us-east-1"
+}
+
+----------------------------------------------------------------------------------------
+main.tf
+
+resource "aws_eip" "myeip1" {
+    vpc    = true
+    provider = aws.roshan1    -----we referance provider block here aws.roshan1
+}
+
+resource "aws_eip" "myeip2" {
+    vpc    = true
+}
+
+---------------------------------------------------
+
+mkdir multiple-providers
+cd multiple-providers/
+ls
+nano provider.tf
+nano main.tf
+terraform init
+terraform plan
+terraform apply --auto-approve
+terraform destroy --auto-approve
+
+-------------------------------------------------------------------------------------------------------------
+
+***IMP Question ***
+
+Question : Can i use two provider block in one file or one provider.tf file
+
+Answer -> Yes directly u can not use two provider bloacks in one place if you have to use provider block then 
+u have to use key word {{ alias }} name and u can use it 
+
+
+
+---------------------------------------------------------
+
+*********************************************************************
+******   Terraform remote state  ******
+*********************************************************************
+
+mkdir remote-state
+cd remote-state/
+mkdir project1
+mkdir project2
+ls
+project1  project2
+cd project1
+terraform init
+----------------------------------------------------------------------
+main.tf
+
+
+provider "aws" {
+    region = "us-east-1"
+
+}
+
+resource "aws_eip" "myeip" {
+    vpc    = true
+}
+
+output "eip-addr" {
+    value = aws_eip.myeip.public_ip
+
+}
+
+terraform {
+  backend "s3" {
+    bucket = "remote-state-10-23"
+    key = "network/eip.tfstate"
+    region = "us-east-1"
+ }
+}
+
+--------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------
+
+cd ..
+cd project2
+
+main.tf
+
+provider "aws" {
+    region = "us-east-1"  
+  
+}
+resource "aws_security_group" "allow_tls" {
+  name        = "allow_tls"
+  description = "Allow TLS inbound traffic"
+
+  ingress {
+    description      = "TLS from VPC"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = ["${data.terraform_remote_state.eip.outputs.eip-addr}/32"]
+   
+  }
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "allow_tls"
+  }
+}
+
+
+data "terraform_remote_state" "eip" {
+  backend = "s3"
+
+  config = {
+    bucket = "remote-state-10-23"
+    key = "network/eip.tfstate"
+    region = "us-east-1"
+    }
+ }
+
+-----------------------------------------------------------------------------------------------------------------
+
+
+
+user create    policy
+
+multiple account 
+
+MFA
+
+-----------------------------------------------------------------------------------------
+project requirement
+-----------------------------------------------------------------------------------------
+
+two teams who are working on 2 diffrent componants 
+team 1 only deal with componants like they create public ip address or elastic ip address
+and they have told that use only those ip which created by our team so 
+when u go write code we get elastic ips which is randomly genrated 
+now they requiremnt is they have already genrated ip address and use only them
+to do so we need to do cross account referencing
+
+team 1 created ip and they stored in s3 buckets now our work was to go to same s3 bucket
+fecth the output values and put it in our security groups
+
+team 1 created netwoeking componants like elastic ip and output of that team i have to use in my security group as input
+
+
+ to do so we use terraform remote store
+
+------------------------------------------------------------------------------------------------------------------------
+the terraform remote state data source retrives the root madule output value from some other terraform configuration,
+using the latest state snapshot from the remote backend.
+-------------------------------------------------------------------------------------------------------------------------
+
+
+-------------------------------------------------------------------------------------------
+Terraform Session 26-29 Ansible -Terraform -Jenkins Integaration Manually and automation 
+-------------------------------------------------------------------------------------------
+
+
+**** Manually*** 
+
+
+NOw in this leacture we will intigrate Ansible and Terraform togather
+
+to intigrate this we need CI Tool there are many CI tools we will use jenkins
+
+now we created ec2 instance 
+
+jenkins-server
+
+inside
+ 
+sudo yum update -y
+
+to install jenkins 
+https://www.jenkins.io/doc/book/installing/linux/
+
+below cmd for redhat we use 
+
+
+
+sudo wget -O /etc/yum.repos.d/jenkins.repo     https://pkg.jenkins.io/redhat-stable/jenkins.repo
+sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+sudo yum upgrade
+sudo amazon-linux-extras install java-openjdk11
+java -version
+sudo yum install jenkins
+sudo systemctl daemon-reload
+service jenkins status
+service jenkins start
+service jenkins status
+systemctl enable jenkins
+
+
+we need deault port number to run jenkins 
+8080--
+
+now to see if jenkins work
+
+copy public ip of ec2 and past 
+
+http://44.203.130.253:8080   add :8080
+
+after that copy 
+
+cat /var/lib/jenkins/secrets/initialAdminPassword  on your jenkins server where your jenkin is cureently runing
+
+it will show password copy that and paste it to jenkins
+crete any password user hit next
+
+SUCCESSFUL ENTERTED JENKINS
+
+----------------------------------------------------------------------------------------------------------------------------
+ 
+ -***********With the help of terraform will create Jenkins Server **************************
+
+---------------------------------------------------------------------------------------------------------------------
+
+now currently we have allocated IAM Admin Access to Ec2 instance howver this is not best practise 
+we need to use least privilage principle policy 
+
+so while creating jenkins server we only give him minimum access of services 
+
+below is the config we have done in terraform 
+
+terrafrom-main
+
+sudo su -
+hostname jenkins-server
+mkdir jenkins-demo
+cd jenkins-demo
+
+we have created below files 
+https://github.com/vikas99341/Terraform-codes/tree/main/tf-jenkins
+
+
+nano iam-policy.tf
+nano iam-role.tf
+nano jenkins-ec2.tf
+nano provider.tf
+nano security_group.tf
+nano terraform-key.pem
+nano variable.tf
+
+
+terraforn init
+terrafrom apply --auto-approve
+
+now jinkins instance will be created will check if its running
+http://54.197.71.219:8080 
+
+connect jenkins ec2 via amazon connect
+
+sudo su -
+service jenkins status
+cat /var/lib/jenkins/secrets/initialAdminPassword
+copy the password paste in jenkins web
+
+SUCCESSFULLY CONNECTED JENKINS
 
 
 
